@@ -108,7 +108,7 @@ plot(model.tmax, lwd=3, bty="n", las=1, fg=NA)
 grid(nx=NA, ny=NULL, lty=1)
 #-
 model.tmax = hw(ts_ts(training.data), h=720)
-plot(model.tmax, lwd=3, bty="n", las=1, fg=NA)
+plot(model.tmax, lwd=3, bty="n", las=1, fg=NA)a
 grid(nx=NA, ny=NULL, lty=1)
 
 
