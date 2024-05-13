@@ -18,7 +18,7 @@ time_series_plot <- ggplot(weather_data, aes(x = DATE, y = TEMP_SI)) +
        y = "Temperature (°C)")
 ggsave("time_series_plot.png", time_series_plot, width = 10, height = 6)
 
-library(ggplot2)
+
 
 
 
