@@ -6,7 +6,6 @@ head(weather_data)
 range(weather_data$DATE)
 library(xts)
 library(tsbox)
-
 library(dplyr)
 
 # Convert DATE column to Date type
@@ -22,45 +21,44 @@ aggregated_data <- weather_data %>%
 # Convert aggregated data to xts object
 historical= xts(aggregated_data[, c("MAX_SI", "MIN_SI", "PRCP_SI")], order.by = aggregated_data$DATE)
 
-
 historical = ts_regular(historical)
 
 historical = na.fill(historical, "extend")
 
-historical = window(historical, start=as.Date("2000-01-01"), end=as.Date("2020-12-31"))
+historical = window(historical, start=as.Date("2000-01-01"), end=as.Date("2022-12-31"))
 
-
+#A plot() of MIN_SI and MAX_SI show the annual cycle of temperatures as well as extreme temperature events that spike above the general curve.
 plot(ts_ts(historical$MAX_SI), col="darkred", bty="n", las=1, fg=NA, 
-     ylim=c(-20, 120), ylab="Temperature (F)")
+     ylim=c(-20, 120), ylab="Temperature (C)")
 
 lines(ts_ts(historical$MIN_SI), col="navy")
 
 grid(nx=NA, ny=NULL, lty=1, col="gray")
 
 legend("topright", fill=c("darkred", "navy"), cex=0.7,
-       legend=c("TMAX", "TMIN"), bg="white")
+       legend=c("MAX_SI", "MIN_SI"), bg="white")
 
 
-
-barplot(historical$PRCP_SI, border=NA, col="darkgreen", ylim=c(0, 2),
-        space=0, bty="n", las=1, fg=NA, ylab="Daily Rainfall (inches)")
+#The plot() of daily precipitation shows no clear seasonal pattern, although the presence of a limited number of high precipitation days 
+barplot(historical$PRCP_SI, border=NA, col="lightgreen", ylim=c(0, 2),
+        space=0, bty="n", las=1, fg=NA, ylab="Daily Rainfall (mm)")
 
 grid(nx=NA, ny=NULL, lty=1)
 
-#
+#Analyze the Data
+#Summary Descriptive Statistics
 summary(historical)
 historical[historical$MIN_SI == min(historical$MIN_SI)]
 historical[historical$MAX_SI == max(historical$MAX_SI)]
 historical[historical$PRCP_SI == max(historical$PRCP_SI)]
-#
-historical$MONTH = format(index(historical), "%m")
 
+#Seasonal Statistics(months)
+historical$MONTH = format(index(historical), "%m")
 months = split(as.numeric(historical$MAX_SI), historical$MONTH)
 sapply(months, summary)
-
 months = split(as.numeric(historical$MIN_SI), historical$MONTH)
 sapply(months, summary)
-#
+#Time Series Decomposition
 decomposition = stl(ts_ts(historical$MAX_SI), s.window=365, t.window=7001)
 plot(decomposition)
 summary(decomposition$time.series[,"trend"])
@@ -68,18 +66,18 @@ summary(decomposition$time.series[,"trend"])
 decomposition = stl(ts_ts(historical$PRCP_SI), s.window=365, t.window=7001)
 plot(decomposition)
 summary(decomposition$time.series[,"trend"])
-#
+#Aggregation
 monthly.tmax = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
 plot(ts_ts(monthly.tmax), col="darkred", ylim=c(20, 100), 
-     lwd=3, bty="n", las=1, fg=NA, ylab="TMAX (F)")
+     lwd=3, bty="n", las=1, fg=NA, ylab="MAX_SI (C)")
 grid(nx=NA, ny=NULL, lty=1)
 #
 monthly.prcp = period.apply(historical$PRCP_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = sum)
-plot(ts_ts(monthly.prcp), col="darkgreen", 
-     lwd=3, bty="n", las=1, fg=NA, ylab="Monthly Precipitation (inches)")
+plot(ts_ts(monthly.prcp), col="orange", 
+     lwd=3, bty="n", las=1, fg=NA, ylab="Monthly Precipitation (mm)")
 grid(nx=NA, ny=NULL, lty=1)
 
-#AREA PLOT
+#AREA PLOT (Area plots can be useful for showing extremes vs. averages with aggregated data.)
 tmax.mean = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
 tmax.max = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = max)
 tmin.mean = period.apply(historical$MIN_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
@@ -92,7 +90,7 @@ tmin.area = c(as.numeric(tmin.mean), rev(as.numeric(tmin.min)))
 indices = c(index(ts_ts(tmax.mean)), rev(index(ts_ts(tmax.mean))))
 
 plot(NA, xlim=range(indices), ylim=c(-20, 100), 
-     lwd=3, bty="n", las=1, fg=NA, ylab="Monthly Temperatures (F)")
+     lwd=3, bty="n", las=1, fg=NA, ylab="Monthly Temperatures (C)")
 polygon(indices, tmax.area, border=NA, col="darkred")
 polygon(indices, tavg.area, border=NA, col="lightgray")
 polygon(indices, tmin.area, border=NA, col="navy")
@@ -108,7 +106,7 @@ plot(model.tmax, lwd=3, bty="n", las=1, fg=NA)
 grid(nx=NA, ny=NULL, lty=1)
 #-
 model.tmax = hw(ts_ts(training.data), h=720)
-plot(model.tmax, lwd=3, bty="n", las=1, fg=NA)a
+plot(model.tmax, lwd=3, bty="n", las=1, fg=NA)
 grid(nx=NA, ny=NULL, lty=1)
 
 
