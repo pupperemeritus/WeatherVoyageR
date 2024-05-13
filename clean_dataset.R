@@ -1,20 +1,30 @@
 # Load required library
 library(dplyr)
 
+
+replace_nines_with_na <- function(data, columns) {
+  for (col in columns) {
+    data[[col]] <- ifelse(grepl("^9+\\.?9*$|^\\.9+9*$|^\\.$", as.character(data[[col]])), NA, data[[col]])
+  }
+  return(data)
+}
+
+
+columns_to_replace <-  c("TEMP", "DEWP", "SLP", "VISIB", "WDSP", "MXSPD", "GUST", "PRCP")
+
+replace_na_with_zero <- function(data, columns) {
+  for (col in columns) {
+    data[[col]][is.na(data[[col]])] <- 0
+  }
+  return(data)
+}
 # Replace missing values with NA
-combined_data_cleaned <-combined_data %>%
-  mutate(
-    TEMP = ifelse(TEMP == 9999.9, NA, TEMP),
-    DEWP = ifelse(DEWP == 9999.9, NA, DEWP),
-    SLP = ifelse(SLP == 9999.9, NA, SLP),
-    STP = ifelse(STP == 9999.9, NA, STP),
-    VISIB = ifelse(VISIB == 999.9, NA, VISIB),
-    WDSP = ifelse(WDSP == 999.9, NA, WDSP),
-    MXSPD = ifelse(MXSPD == 999, NA, MXSPD),
-    GUST = ifelse(GUST == 999.9, NA, GUST),
-  )
+combined_data_cleaned <- replace_nines_with_na(combined_data, columns_to_replace)
 
+# List of columns where NA values should be replaced with 0
+columns_to_replace <- c("SNDP")
 
+combined_data_cleaned <- replace_na_with_zero(combined_data_cleaned, columns_to_replace)
 
 na_percentages <- colMeans(is.na(combined_data_cleaned))
 
@@ -54,7 +64,6 @@ combined_data_cleaned <- combined_data_cleaned %>%
   mutate(
     TEMP_SI = ifelse(!is.na(TEMP), fahrenheit_to_celsius(TEMP), NA),
     DEWP_SI = ifelse(!is.na(DEWP), fahrenheit_to_celsius(DEWP), NA),
-    STP_SI = ifelse(!is.na(STP), inches_to_pascal(STP), NA),
     VISIB_SI = ifelse(!is.na(VISIB), miles_to_kilometers(VISIB), NA),
     WDSP_SI = ifelse(!is.na(WDSP), knots_to_mps(WDSP), NA),
     MXSPD_SI = ifelse(!is.na(MXSPD), knots_to_mps(MXSPD), NA),
@@ -63,7 +72,7 @@ combined_data_cleaned <- combined_data_cleaned %>%
     PRCP_SI = ifelse(!is.na(PRCP), inches_to_mm(PRCP), NA),
     SNDP_SI = ifelse(!is.na(SNDP), inches_to_cm(SNDP), NA)
   ) %>%
-  select(-c(TEMP, DEWP, SLP, STP, VISIB, WDSP, MXSPD, MAX, MIN, PRCP, SNDP))
+  select(-c(TEMP, DEWP, SLP,  VISIB, WDSP, MXSPD, MAX, MIN, PRCP, SNDP))
 combined_data_cleaned$Fog <- (combined_data_cleaned$FRSHTT %/% 100000) %% 10
 combined_data_cleaned$Rain_Drizzle <- (combined_data_cleaned$FRSHTT %/% 10000) %% 10
 combined_data_cleaned$Snow_Ice_Pellets <- (combined_data_cleaned$FRSHTT %/% 1000) %% 10
@@ -74,4 +83,12 @@ combined_data_cleaned$Tornado_Funnel_Cloud <- combined_data_cleaned$FRSHTT %% 10
 # Combine binary flags into a single bitmap column
 combined_data_cleaned$FRSHTT <- paste(combined_data_cleaned$Fog, combined_data_cleaned$Rain_Drizzle, combined_data_cleaned$Snow_Ice_Pellets, 
                              combined_data_cleaned$Hail, combined_data_cleaned$Thunder, combined_data_cleaned$Tornado_Funnel_Cloud, sep="")
+
+# Define major columns where NA values should be considered for dropping rows
+major_columns <- c("TEMP", "DEWP", "SLP",  "VISIB", "WDSP", "MXSPD", "PRCP")
+
+# Drop rows with NA values only in major columns
+combined_data_cleaned <- combined_data_cleaned[complete.cases(combined_data[, major_columns]), ]
+
 write.csv(combined_data_cleaned,file="cleaned_data.csv",sep=",")
+
