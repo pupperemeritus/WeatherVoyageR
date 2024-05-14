@@ -37,5 +37,3 @@ missing_values <- sapply(weather_data, function(x) sum(is.na(x)))
 
 # Print the results
 print(missing_values)
-
-
