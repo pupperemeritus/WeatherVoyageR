@@ -48,7 +48,8 @@ correlation_matrix <- cor(weather_data[, c("TEMP_SI", "DEWP_SI", "WDSP_SI", "VIS
 ggplot(data = melt(correlation_matrix), aes(x = Var1, y = Var2, fill = value)) +
   geom_tile() +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
-  labs(title = "Correlation Matrix Heatmap",
-       x = "Variable", y = "Variable", fill = "Correlation") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
-
+  labs(
+    title = "Correlation Matrix Heatmap",
+    x = "Variable", y = "Variable", fill = "Correlation"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels for better readability

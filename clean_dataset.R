@@ -1,7 +1,7 @@
 # Load required library
 library(dplyr)
 
-
+combined_data <- read.csv("./data/combined_data.csv")
 replace_nines_with_na <- function(data, columns) {
   for (col in columns) {
     data[[col]] <- ifelse(grepl("^9+\\.?9*$|^\\.9+9*$|^\\.$", as.character(data[[col]])), NA, data[[col]])
@@ -10,7 +10,7 @@ replace_nines_with_na <- function(data, columns) {
 }
 
 
-columns_to_replace <-  c("TEMP", "DEWP", "SLP", "VISIB", "WDSP", "MXSPD", "GUST", "PRCP")
+columns_to_replace <- c("TEMP", "DEWP", "SLP", "VISIB", "WDSP", "MXSPD", "GUST", "PRCP")
 
 replace_na_with_zero <- function(data, columns) {
   for (col in columns) {
@@ -72,7 +72,7 @@ combined_data_cleaned <- combined_data_cleaned %>%
     PRCP_SI = ifelse(!is.na(PRCP), inches_to_mm(PRCP), NA),
     SNDP_SI = ifelse(!is.na(SNDP), inches_to_cm(SNDP), NA)
   ) %>%
-  select(-c(TEMP, DEWP, SLP,  VISIB, WDSP, MXSPD, MAX, MIN, PRCP, SNDP))
+  select(-c(TEMP, DEWP, SLP, VISIB, WDSP, MXSPD, MAX, MIN, PRCP, SNDP))
 combined_data_cleaned$Fog <- (combined_data_cleaned$FRSHTT %/% 100000) %% 10
 combined_data_cleaned$Rain_Drizzle <- (combined_data_cleaned$FRSHTT %/% 10000) %% 10
 combined_data_cleaned$Snow_Ice_Pellets <- (combined_data_cleaned$FRSHTT %/% 1000) %% 10
@@ -81,14 +81,15 @@ combined_data_cleaned$Thunder <- (combined_data_cleaned$FRSHTT %/% 10) %% 10
 combined_data_cleaned$Tornado_Funnel_Cloud <- combined_data_cleaned$FRSHTT %% 10
 
 # Combine binary flags into a single bitmap column
-combined_data_cleaned$FRSHTT <- paste(combined_data_cleaned$Fog, combined_data_cleaned$Rain_Drizzle, combined_data_cleaned$Snow_Ice_Pellets, 
-                             combined_data_cleaned$Hail, combined_data_cleaned$Thunder, combined_data_cleaned$Tornado_Funnel_Cloud, sep="")
+combined_data_cleaned$FRSHTT <- paste(combined_data_cleaned$Fog, combined_data_cleaned$Rain_Drizzle, combined_data_cleaned$Snow_Ice_Pellets,
+  combined_data_cleaned$Hail, combined_data_cleaned$Thunder, combined_data_cleaned$Tornado_Funnel_Cloud,
+  sep = ""
+)
 
 # Define major columns where NA values should be considered for dropping rows
-major_columns <- c("TEMP", "DEWP", "SLP",  "VISIB", "WDSP", "MXSPD", "PRCP")
+major_columns <- c("TEMP", "DEWP", "SLP", "VISIB", "WDSP", "MXSPD", "PRCP")
 
 # Drop rows with NA values only in major columns
 combined_data_cleaned <- combined_data_cleaned[complete.cases(combined_data[, major_columns]), ]
 
-write.csv(combined_data_cleaned,file="cleaned_data.csv",sep=",")
-
+write.csv(combined_data_cleaned, file = "cleaned_data.csv", sep = ",")
