@@ -7,12 +7,13 @@ weather_data <- read.csv("cleaned_data.csv")
 library(xts)
 library(tsbox)
 library(dplyr)
+library(lubridate)
 
 # Convert DATE column to Date type
 weather_data$DATE <- as.Date(weather_data$DATE)
 
 # Function to perform analysis for a single station
-analyze_station <- function(station_name = "HYDERABAD INTERNATIONAL AIRPORT, IN" ) {
+analyze_station <- function(station_name = "AGARTALA, IN" ) {
   # Filter data for the selected station
   station_data <- filter(weather_data, NAME == station_name)
   
@@ -47,19 +48,19 @@ historical = na.fill(historical, "extend")
 historical = window(historical, start=as.Date("2000-01-01"), end=as.Date("2022-12-31"))
 
 #A plot() of MIN_SI and MAX_SI show the annual cycle of temperatures as well as extreme temperature events that spike above the general curve.
-plot(ts_ts(historical$MAX_SI), col="darkred", bty="n", las=1, fg=NA, 
+plot(ts_ts(historical$MAX_SI), col="#d84315", bty="n", las=1, fg=NA, 
      ylim=c(-20, 120), ylab="Temperature (C)")
 
-lines(ts_ts(historical$MIN_SI), col="navy")
+lines(ts_ts(historical$MIN_SI), col="#ffc107")
 
-grid(nx=NA, ny=NULL, lty=1, col="gray")
+grid(nx=NA, ny=NULL, lty=1, col="black")
 
-legend("topright", fill=c("darkred", "navy"), cex=0.7,
+legend("topright", fill=c("#d84315", "#ffc107"), cex=0.7,
        legend=c("MAX_SI", "MIN_SI"), bg="white")
 
 
 #The plot() of daily precipitation shows no clear seasonal pattern, although the presence of a limited number of high precipitation days 
-barplot(historical$PRCP_SI, border=NA, col="lightgreen", ylim=c(0, 2),
+barplot(historical$PRCP_SI, border=NA, col="#388E3C", ylim=c(0, 2),
         space=0, bty="n", las=1, fg=NA, ylab="Daily Rainfall (mm)")
 
 grid(nx=NA, ny=NULL, lty=1)
@@ -78,25 +79,37 @@ sapply(months, summary)
 months = split(as.numeric(historical$MIN_SI), historical$MONTH)
 sapply(months, summary)
 #Time Series Decomposition
-decomposition = stl(ts_ts(historical$MAX_SI), s.window=365, t.window=7001)
+
+# Linear interpolation
+decomposition <- stl(na.approx(ts_ts(historical$MAX_SI)), s.window = 365, t.window = 7001)
 plot(decomposition)
 summary(decomposition$time.series[,"trend"])
 #
-decomposition = stl(ts_ts(historical$PRCP_SI), s.window=365, t.window=7001)
+decomposition <- stl(na.approx(ts_ts(historical$PRCP_SI)), s.window = 365, t.window = 7001)
 plot(decomposition)
 summary(decomposition$time.series[,"trend"])
 #Aggregation
-monthly.tmax = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
-plot(ts_ts(monthly.tmax), col="darkred", ylim=c(20, 100), 
-     lwd=3, bty="n", las=1, fg=NA, ylab="MAX_SI (C)")
-grid(nx=NA, ny=NULL, lty=1)
-#
+# monthly.tmax = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
+# plot(ts_ts(monthly.tmax), col="darkred", ylim=c(20, 100), 
+#      lwd=3, bty="n", las=1, fg=NA, ylab="MAX_SI (C)")
+# grid(nx=NA, ny=NULL, lty=1)
+# # Convert historical data to zoo object
+historical_zoo <- as.zoo(historical)
+# Aggregate data to monthly frequency
+monthly_mean <- aggregate(historical_zoo, as.yearmon, mean)
+# Plot the aggregated monthly data
+plot(monthly_mean$MAX_SI, col = "darkred", ylim = c(20, 100),
+     lwd = 3, bty = "n", las = 1, fg = NA, ylab = "MAX_SI (C)")
+
 monthly.prcp = period.apply(historical$PRCP_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = sum)
 plot(ts_ts(monthly.prcp), col="orange", 
-     lwd=3, bty="n", las=1, fg=NA, ylab="Monthly Precipitation (mm)")
+      lwd=3, bty="n", las=1, fg=NA, ylab="Monthly Precipitation (mm)")
 grid(nx=NA, ny=NULL, lty=1)
+#plot(monthly_mean$PRCP_SI, col = "darkgreen", ylim = c(20, 100), 
+  #   lwd = 3, bty = "n", las = 1, fg = NA, ylab = "MAX_SI (C)")
 
-#AREA PLOT (Area plots can be useful for showing extremes vs. averages with aggregated data.)
+
+# #AREA PLOT (Area plots can be useful for showing extremes vs. averages with aggregated data.)
 tmax.mean = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
 tmax.max = period.apply(historical$MAX_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = max)
 tmin.mean = period.apply(historical$MIN_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
@@ -106,6 +119,25 @@ tmax.area = c(as.numeric(tmax.max), rev(as.numeric(tmax.mean)))
 tavg.area = c(as.numeric(tmax.mean), rev(as.numeric(tmin.mean)))
 tmin.area = c(as.numeric(tmin.mean), rev(as.numeric(tmin.min)))
 
+# # Convert historical$MAX_SI to a regular time series object with monthly frequency
+# monthly_tmax <- ts(historical$MAX_SI, frequency = 12)
+# print(monthly_tmax)
+# # Get the index of the monthly time series
+# indices <- index(monthly_tmax)
+# # Reverse the indices for the area plot
+# rev_indices <- rev(indices)
+# # Calculate the maximum temperature for each month across all years
+# tmax.max <- apply(monthly_tmax, 2, max, na.rm = TRUE)
+# # Continue with your code using rev_indices
+# tmax.max <- period.apply(monthly_tmax, INDEX = seq(1, length(monthly_tmax), by = 30.4375), FUN = max)
+# tmin.mean <- period.apply(historical$MIN_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = mean)
+# tmin.min <- period.apply(historical$MIN_SI, INDEX = seq(1, nrow(historical) - 1, 30.4375), FUN = min)
+# tmax.area <- c(as.numeric(tmax.max), rev(as.numeric(tmax.mean)))
+# tavg.area <- c(as.numeric(tmax.mean), rev(as.numeric(tmin.mean)))
+# tmin.area <- c(as.numeric(tmin.mean), rev(as.numeric(tmin.min)))
+
+
+# Use rev_indices in your subsequent code
 indices = c(index(ts_ts(tmax.mean)), rev(index(ts_ts(tmax.mean))))
 
 plot(NA, xlim=range(indices), ylim=c(-20, 100), 
@@ -180,5 +212,5 @@ plot(ts_ts(flooding), col="darkgreen",
 grid(nx=NA, ny=NULL, lty=1)
 summary(as.numeric(flooding))
 
-decomposition = stl(ts_ts(historical$FLOOD), s.window=365, t.window=7001)
+decomposition <- stl(na.approx(ts_ts(historical$FLOOD)), s.window = 365, t.window = 7001)
 plot(decomposition)
