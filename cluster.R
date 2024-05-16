@@ -118,8 +118,8 @@ ui <- dashboardPage(
       id = "tabs",
       menuItem("Winter", tabName = "winter", icon = icon("snowflake")), # Updated icon names
       menuItem("Spring", tabName = "spring", icon = icon("tree")), # Updated icon names
-      menuItem("Monsoon", tabName = "monsoon", icon = icon("cloud-rain")), # Updated icon names
       menuItem("Summer", tabName = "summer", icon = icon("sun")), # Updated icon names
+      menuItem("Monsoon", tabName = "monsoon", icon = icon("cloud-rain")), # Updated icon names
       menuItem("Fall", tabName = "fall", icon = icon("leaf")) # Updated icon names
     )
   ),
@@ -133,9 +133,9 @@ ui <- dashboardPage(
         width: 200px;
       }
       .leaflet-container {
-        height: 100vh !important;
-        width: calc(100vw - 200px) !important; /* Full width minus sidebar width */
-        margin: 0;
+        height: 95vh !important;
+        width: calc(100vw - 210px) !important; /* Full width minus sidebar width */
+        margin: 0 auto;
         padding: 0;
       }
       ")
