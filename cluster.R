@@ -6,7 +6,7 @@ library(shinydashboard)
 library(htmlwidgets)
 
 # Load data
-# weather_data <- read.csv("./data/cleaned_data.csv")
+weather_data <- read.csv("./data/cleaned_data.csv")
 
 # Convert DATE column to Date type
 weather_data$DATE <- as.Date(weather_data$DATE)
