@@ -126,100 +126,44 @@ ui <- dashboardPage(
   dashboardBody(
     tags$style(
       HTML("
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.dashboardBody {
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.content-wrapper {
-  background-color: #f5f5f5;
-  padding: 10px;
-}
-
-.leaflet-container {
-  width: 100vw;
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background-color: lightblue;
-  z-index: 1;
-}
-    ")
+      .content-wrapper, .right-side {
+        margin-left: 200px; /* Sidebar width */
+      }
+      .main-sidebar {
+        width: 200px;
+      }
+      .leaflet-container {
+        height: 100vh !important;
+        width: calc(100vw - 200px) !important; /* Full width minus sidebar width */
+        margin: 0;
+        padding: 0;
+      }
+      ")
     ),
     tabItems(
       tabItem(
         tabName = "winter",
-        fluidRow(
-          box(
-            title = "Map",
-            status = "primary",
-            solidHeader = TRUE,
-            leafletOutput("map_winter")
-          )
-        )
+        leafletOutput("map_winter", width = "100%", height = "100%")
       ),
       tabItem(
         tabName = "spring",
-        fluidRow(
-          box(
-            title = "Map",
-            status = "primary",
-            solidHeader = TRUE,
-            leafletOutput("map_spring")
-          )
-        )
+        leafletOutput("map_spring", width = "100%", height = "100%")
       ),
       tabItem(
         tabName = "summer",
-        fluidRow(
-          box(
-            title = "Map",
-            status = "primary",
-            solidHeader = TRUE,
-            leafletOutput("map_summer")
-          )
-        )
+        leafletOutput("map_summer", width = "100%", height = "100%")
       ),
       tabItem(
         tabName = "fall",
-        fluidRow(
-          box(
-            title = "Map",
-            status = "primary",
-            solidHeader = TRUE,
-            leafletOutput("map_fall")
-          )
-        )
+        leafletOutput("map_fall", width = "100%", height = "100%")
       ),
       tabItem(
         tabName = "monsoon",
-        fluidRow(
-          box(
-            title = "Map",
-            status = "primary",
-            solidHeader = TRUE,
-            leafletOutput("map_monsoon")
-          )
-        )
+        leafletOutput("map_monsoon", width = "100%", height = "100%")
       )
     )
   )
 )
-
-
 
 # Define server logic
 server <- function(input, output) {

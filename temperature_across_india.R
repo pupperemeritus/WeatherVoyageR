@@ -1,5 +1,5 @@
 library(ggplot2)
-weather_data <- read.csv("cleaned_data.csv")
+weather_data <- read.csv("./data/cleaned_data.csv")
 # Plot temperature values on a map of India with a contrast gradient
 india_map <- ggplot(weather_data, aes(x = LONGITUDE, y = LATITUDE, color = TEMP_SI)) +
   geom_point() +
