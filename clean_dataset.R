@@ -10,7 +10,7 @@ replace_nines_with_na <- function(data, columns) {
 }
 
 
-columns_to_replace <- c("TEMP", "DEWP", "SLP", "VISIB", "WDSP", "MXSPD", "GUST", "PRCP","SNDP","STP")
+columns_to_replace <- c("TEMP", "DEWP", "SLP", "VISIB", "WDSP", "MXSPD", "GUST", "PRCP", "SNDP", "STP")
 
 replace_na_with_zero <- function(data, columns) {
   for (col in columns) {

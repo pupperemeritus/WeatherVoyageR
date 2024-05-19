@@ -1,7 +1,7 @@
 library(ggplot2)
 library(viridis)
 
-weather_data <- read.csv("./cleaned_data.csv")
+weather_data <- read.csv("./data/cleaned_data.csv")
 
 # Combine the attributes into a single dataframe
 weather_attributes <- c("Fog", "Rain_Drizzle", "Snow_Ice_Pellets", "Hail", "Thunder", "Tornado_Funnel_Cloud")
