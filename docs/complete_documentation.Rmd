@@ -1,0 +1,382 @@
+---
+title: "Weather Data Analysis and Visualization"
+author: "Rohith Nagula Malyala, Sri Guru Datta Pisupati, Sanjeev Varma Katari"
+date: "19-05-2024"
+output: html_document
+---
+
+# Introduction
+
+This document provides an overview of the analysis and visualization of weather data using R. We will cover the steps taken to clean the data, identify extreme values, and visualize the results. The analysis includes various plots to understand temperature trends, distributions, and correlations between different weather attributes.
+
+# Libraries
+
+We begin by loading the necessary libraries:
+
+```{r}
+library(shiny)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(viridis)
+library(tidyr)
+```
+
+
+Sure, I'll provide a more detailed section on the data preprocessing part, from downloading the data to cleaning it. Here it is:
+
+
+# Data Preprocessing
+
+The preprocessing stage is crucial to ensure that the data is clean and ready for analysis. This section details the steps taken to download, clean, and prepare the weather data.
+
+## Downloading the Data
+
+The weather data was obtained from a public dataset. For this example, let's assume the data was downloaded from a weather database and saved as a CSV file named `cleaned_data.csv`. The file contains daily weather observations from multiple stations.
+
+## Reading the Data
+
+We begin by reading the data into R using the `read.csv` function. This function reads a file in table format and creates a data frame from it.
+
+```{r}
+weather_data <- read.csv("../data/cleaned_data.csv")
+```
+
+## Inspecting the Data
+
+After loading the data, it’s important to inspect the first few rows to understand its structure and identify any immediate issues.
+
+```{r}
+head(weather_data)
+```
+
+This command helps to view the first six rows of the data frame and check the column names, types of data, and some initial values.
+
+## Converting Date Column
+
+The `DATE` column, which contains the date of the observation, is initially read as a character string. We convert it to a date format using the `as.Date` function. This is important for any time series analysis or operations that require date manipulation.
+
+```{r}
+weather_data$DATE <- as.Date(weather_data$DATE)
+```
+
+## Extracting Day of the Year
+
+To analyze seasonal patterns, we extract the day of the year (ranging from 1 to 365 or 366 for leap years) from the `DATE` column using the `yday` function from the `lubridate` package.
+
+```{r}
+weather_data$DAY_OF_YEAR <- yday(weather_data$DATE)
+```
+
+## Identifying Numeric Columns
+
+The dataset contains several columns representing different weather attributes, such as temperature, dew point, wind speed, etc. We identify these columns and ensure they are in numeric format, which is necessary for performing statistical calculations.
+
+```{r}
+numeric_cols <- c("TEMP_SI", "DEWP_SI", "WDSP_SI", "MXSPD_SI", "MAX_SI", "MIN_SI", "PRCP_SI", "SNDP_SI")
+weather_data[numeric_cols] <- lapply(weather_data[numeric_cols], as.numeric)
+```
+
+## Handling Missing Values
+
+Missing values in the dataset can cause errors in analysis and visualization. We handle missing values by removing rows with NA values in any of the numeric columns. Alternatively, more sophisticated methods such as imputation could be used, but for simplicity, we remove these rows.
+
+```{r}
+weather_data <- weather_data %>%
+    filter(complete.cases(weather_data[numeric_cols]))
+```
+
+## Identifying and Handling Outliers
+
+Outliers can significantly impact the results of an analysis. To identify outliers, we calculate the mean and standard deviation for each numeric column, grouped by the day of the year and station name. We then filter out values that are beyond a certain number of standard deviations from the mean.
+
+### Calculating Mean and Standard Deviation
+
+We create a lookup table that contains the mean and standard deviation for each day of the year and each station.
+
+```{r}
+mean_sd_lookup <- weather_data %>%
+    group_by(DAY_OF_YEAR, NAME) %>%
+    summarise(
+        TEMP_SI_mean = mean(TEMP_SI, na.rm = TRUE),
+        TEMP_SI_sd = sd(TEMP_SI, na.rm = TRUE),
+        DEWP_SI_mean = mean(DEWP_SI, na.rm = TRUE),
+        DEWP_SI_sd = sd(DEWP_SI, na.rm = TRUE),
+        WDSP_SI_mean = mean(WDSP_SI, na.rm = TRUE),
+        WDSP_SI_sd = sd(WDSP_SI, na.rm = TRUE),
+        MXSPD_SI_mean = mean(MXSPD_SI, na.rm = TRUE),
+        MXSPD_SI_sd = sd(MXSPD_SI, na.rm = TRUE),
+        MAX_SI_mean = mean(MAX_SI, na.rm = TRUE),
+        MAX_SI_sd = sd(MAX_SI, na.rm = TRUE),
+        MIN_SI_mean = mean(MIN_SI, na.rm = TRUE),
+        MIN_SI_sd = sd(MIN_SI, na.rm = TRUE),
+        PRCP_SI_mean = mean(PRCP_SI, na.rm = TRUE),
+        PRCP_SI_sd = sd(PRCP_SI, na.rm = TRUE),
+        SNDP_SI_mean = mean(SNDP_SI, na.rm = TRUE),
+        SNDP_SI_sd = sd(SNDP_SI, na.rm = TRUE),
+        .groups = "drop"
+    )
+```
+
+### Filtering Outliers
+
+We then filter the data to identify and handle extreme values. Here, we consider values that are beyond 3, 4, and 5 standard deviations from the mean as extreme.
+
+```{r}
+multipliers <- c(3, 4, 5)
+extreme_values_by_multiplier <- list()
+
+for (multiplier in multipliers) {
+    extreme_values <- weather_data %>%
+        left_join(mean_sd_lookup, by = c("DAY_OF_YEAR", "NAME")) %>%
+        filter(
+            abs(TEMP_SI - TEMP_SI_mean) > multiplier * TEMP_SI_sd |
+            abs(DEWP_SI - DEWP_SI_mean) > multiplier * DEWP_SI_sd |
+            abs(WDSP_SI - WDSP_SI_mean) > multiplier * WDSP_SI_sd |
+            abs(MXSPD_SI - MXSPD_SI_mean) > multiplier * MXSPD_SI_sd |
+            abs(MAX_SI - MAX_SI_mean) > multiplier * MAX_SI_sd |
+            abs(MIN_SI - MIN_SI_mean) > multiplier * MIN_SI_sd |
+            abs(PRCP_SI - PRCP_SI_mean) > multiplier * PRCP_SI_sd |
+            abs(SNDP_SI - SNDP_SI_mean) > multiplier * SNDP_SI_sd
+        ) %>%
+        select(NAME, DATE, DAY_OF_YEAR, TEMP_SI, DEWP_SI, WDSP_SI, MXSPD_SI, MAX_SI, MIN_SI, PRCP_SI, SNDP_SI)
+
+    extreme_values_by_multiplier[[as.character(multiplier)]] <- extreme_values
+}
+```
+
+# Summary
+
+This detailed preprocessing section covered downloading the data, converting and formatting date columns, handling missing values, and identifying outliers. These steps ensure that the data is clean and ready for subsequent analysis and visualization.
+
+
+
+# Extreme Value Analysis
+
+## Calculation of Extreme Values
+
+We calculate extreme values based on 3, 4, and 5 standard deviations from the mean, grouped by the day of the year and station name. This helps in identifying significant deviations in weather attributes.
+
+```{r}
+# Calculate and filter extreme values (3, 4, 5 standard deviations from the mean) grouped by day of the year and station name
+multipliers <- c(3, 4, 5)
+extreme_values_by_multiplier <- list()
+
+# Create a lookup table for mean and standard deviation by day of the year and station name
+mean_sd_lookup <- weather_data %>%
+    group_by(DAY_OF_YEAR, NAME) %>%
+    summarise(
+        TEMP_SI_mean = mean(TEMP_SI, na.rm = TRUE),
+        TEMP_SI_sd = sd(TEMP_SI, na.rm = TRUE),
+        DEWP_SI_mean = mean(DEWP_SI, na.rm = TRUE),
+        DEWP_SI_sd = sd(DEWP_SI, na.rm = TRUE),
+        WDSP_SI_mean = mean(WDSP_SI, na.rm = TRUE),
+        WDSP_SI_sd = sd(WDSP_SI, na.rm = TRUE),
+        MXSPD_SI_mean = mean(MXSPD_SI, na.rm = TRUE),
+        MXSPD_SI_sd = sd(MXSPD_SI, na.rm = TRUE),
+        MAX_SI_mean = mean(MAX_SI, na.rm = TRUE),
+        MAX_SI_sd = sd(MAX_SI, na.rm = TRUE),
+        MIN_SI_mean = mean(MIN_SI, na.rm = TRUE),
+        MIN_SI_sd = sd(MIN_SI, na.rm = TRUE),
+        PRCP_SI_mean = mean(PRCP_SI, na.rm = TRUE),
+        PRCP_SI_sd = sd(PRCP_SI, na.rm = TRUE),
+        SNDP_SI_mean = mean(SNDP_SI, na.rm = TRUE),
+        SNDP_SI_sd = sd(SNDP_SI, na.rm = TRUE),
+        .groups = "drop"
+    )
+
+for (multiplier in multipliers) {
+    extreme_values <- weather_data %>%
+        left_join(mean_sd_lookup, by = c("DAY_OF_YEAR", "NAME")) %>%
+        filter(
+            abs(TEMP_SI - TEMP_SI_mean) > multiplier * TEMP_SI_sd |
+                abs(DEWP_SI - DEWP_SI_mean) > multiplier * DEWP_SI_sd |
+                abs(WDSP_SI - WDSP_SI_mean) > multiplier * WDSP_SI_sd |
+                abs(MXSPD_SI - MXSPD_SI_mean) > multiplier * MXSPD_SI_sd |
+                abs(MAX_SI - MAX_SI_mean) > multiplier * MAX_SI_sd |
+                abs(MIN_SI - MIN_SI_mean) > multiplier * MIN_SI_sd |
+                abs(PRCP_SI - PRCP_SI_mean) > multiplier * PRCP_SI_sd |
+                abs(SNDP_SI - SNDP_SI_mean) > multiplier * SNDP_SI_sd
+        ) %>%
+        select(NAME, DATE, DAY_OF_YEAR, TEMP_SI, DEWP_SI, WDSP_SI, MXSPD_SI, MAX_SI, MIN_SI, PRCP_SI, SNDP_SI)
+
+    extreme_values_by_multiplier[[as.character(multiplier)]] <- extreme_values
+}
+
+```
+
+# Shiny Application for viewing frequency of extremities.
+
+A Shiny application is created to allow users to interactively explore extreme values. The user can select a station, extremity level, and attribute to visualize the data.
+
+```{r}
+ui <- fluidPage(
+    titlePanel("Weather Station Extreme Values Analysis"),
+    sidebarLayout(
+        sidebarPanel(
+            selectInput("station", "Select Station:", choices = unique(weather_data$NAME)),
+            selectInput("multiplier", "Select Extremity Level:", choices = multipliers, selected = 3),
+            selectInput("attribute", "Select Attribute:", choices = c(
+                "Temperature" = "TEMP_SI",
+                "Dew Point" = "DEWP_SI",
+                "Wind Speed" = "WDSP_SI",
+                "Max Wind Speed" = "MXSPD_SI",
+                "Max Temperature" = "MAX_SI",
+                "Min Temperature" = "MIN_SI",
+                "Precipitation" = "PRCP_SI",
+                "Snow Depth" = "SNDP_SI"
+            ), selected = "TEMP_SI")
+        ),
+        mainPanel(
+            plotOutput("extremePlot")
+        )
+    )
+)
+
+server <- function(input, output) {
+    selected_data <- reactive({
+        req(input$station, input$multiplier, input$attribute)
+        multiplier <- as.character(input$multiplier)
+        extreme_values_by_multiplier[[multiplier]] %>%
+            filter(NAME == input$station) %>%
+            select(DATE, DAY_OF_YEAR, NAME, !!sym(input$attribute))
+    })
+
+    output$extremePlot <- renderPlot({
+        data <- selected_data()
+        attribute <- input$attribute
+
+        if (nrow(data) > 0) {
+            data <- data %>%
+                filter(!is.na(!!sym(attribute))) %>%
+                group_by(DAY_OF_YEAR) %>%
+                summarise(count = n(), .groups = 'drop')
+
+            ggplot(data, aes(x = DAY_OF_YEAR, y = count, fill = count)) +
+                geom_bar(stat = "identity", alpha = 0.8) +
+                labs(
+                    title = paste("Extreme Values for Station:", input$station),
+                    x = "Day of Year", y = "Count",
+                    fill = "Count"
+                ) +
+                scale_fill_viridis_c(option = "D") +
+                theme_minimal() +
+                theme(
+                    text = element_text(family = "Arial", color = "black"),
+                    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+                    axis.title = element_text(size = 14),
+                    axis.text = element_text(size = 12),
+                    legend.title = element_text(size = 14),
+                    legend.text = element_text(size = 12),
+                    panel.grid.major = element_line(color = "grey90"),
+                    panel.grid.minor = element_blank(),
+                    panel.background = element_rect(fill = "white", color = "black"),
+                    plot.background = element_rect(fill = "white", color = "black")
+                ) +
+                scale_y_continuous(limits = c(0, NA))
+        } else {
+            ggplot() +
+                labs(
+                    title = "No extreme values found for the selected station and extremity level.",
+                    x = "Day of Year", y = "Count"
+                )
+        }
+    })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+# Data Visualization
+
+## Time Series Plot for Temperature
+
+This plot shows the temperature trends over time for different weather stations.
+
+```{r}
+ggplot(weather_data, aes(x = DATE, y = TEMP_SI)) +
+  geom_line() +
+  labs(title = "Temperature Trends Over Time", x = "Date", y = "Temperature (°C)") +
+  facet_wrap(~STATION)
+```
+
+## Histograms/Density Plots for Temperature and Dew Point
+
+These plots illustrate the distribution of temperature and dew point values.
+
+```{r}
+ggplot(weather_data, aes(x = TEMP_SI)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Temperature Distribution", x = "Temperature (°C)", y = "Frequency") +
+  facet_wrap(~STATION)
+
+ggplot(weather_data, aes(x = DEWP_SI)) +
+  geom_histogram(binwidth = 1, fill = "lightgreen", color = "black") +
+  labs(title = "Dew Point Distribution", x = "Dew Point (°C)", y = "Frequency") +
+  facet_wrap(~STATION)
+```
+
+## Scatter Plot for Temperature vs Dew Point
+
+This scatter plot shows the relationship between temperature and dew point.
+
+```{r}
+ggplot(weather_data, aes(x = DEWP_SI, y = TEMP_SI)) +
+  geom_point() +
+  labs(title = "Temperature vs Dew Point", x = "Dew Point (°C)", y = "Temperature (°C)") +
+  facet_wrap(~STATION)
+```
+
+## Box Plots for Temperature by Weather Event
+
+Box plots display the distribution of temperature values in relation to different weather events such as fog.
+
+```{r}
+ggplot(weather_data, aes(x = Fog, y = TEMP_SI)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Temperature Distribution by Fog", x = "Fog (0 = No, 1 = Yes)", y = "Temperature (°C)") +
+  facet_wrap(~STATION)
+```
+
+## Bar Plot for Count of Weather Events
+
+A bar plot showing the count of different weather events.
+
+```{r}
+# Summarize the relevant weather event columns
+weather_events_summary <- weather_data %>%
+  select(Fog, Rain_Drizzle, Snow_Ice_Pellets, Hail, Thunder, Tornado_Funnel_Cloud) %>%
+  summarize_all(sum, na.rm = TRUE)
+
+# Transform the data to a long format
+weather_events <- weather_events_summary %>%
+  pivot_longer(cols = everything(), names_to = "Event", values_to = "Count")
+
+# Plot the data
+ggplot(weather_events, aes(x = Event, y = Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Count of Weather Events", x = "Weather Event", y = "Count") +
+  theme_minimal()
+```
+
+## Correlation Matrix Heatmap
+
+A heatmap visualizing the correlation matrix of different weather attributes.
+
+```{r}
+weather_events_summary <- weather_data %>%
+  select(Fog, Rain, Snow, Hail, Thunder, Tornado_Funnel_Cloud) %>%
+  summarize_all(sum, na.rm = TRUE)
+
+weather_events <- weather_events_summary %>%
+  pivot_longer(cols = everything(), names_to = "Event", values_to = "Count")
+
+ggplot(weather_events, aes(x = Event, y = Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Count of Weather Events", x = "Weather Event", y = "Count") +
+  theme_minimal()
+```
+
+# Conclusion
+
+This document provided an overview of the weather data analysis, from data preparation to identifying extreme values and creating various visualizations. The analysis helps in understanding weather patterns, distributions, and correlations between different weather attributes, which can be useful for further studies and decision-making processes.
