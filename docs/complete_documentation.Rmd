@@ -14,7 +14,6 @@ This document provides an overview of the analysis and visualization of weather 
 We begin by loading the necessary libraries:
 
 ```{r}
-library(shiny)
 library(dplyr)
 library(lubridate)
 library(ggplot2)
@@ -23,40 +22,237 @@ library(tidyr)
 ```
 
 
-Sure, I'll provide a more detailed section on the data preprocessing part, from downloading the data to cleaning it. Here it is:
-
 
 # Data Preprocessing
 
-The preprocessing stage is crucial to ensure that the data is clean and ready for analysis. This section details the steps taken to download, clean, and prepare the weather data.
-
 ## Downloading the Data
 
-The weather data was obtained from a public dataset. For this example, let's assume the data was downloaded from a weather database and saved as a CSV file named `cleaned_data.csv`. The file contains daily weather observations from multiple stations.
+In this section, we outline the steps taken to download and preprocess the Global Summary of the Day (GSOD) data from the National Centers for Environmental Information (NCEI). The process involves downloading compressed tar.gz files for each year, extracting them, and then organizing the extracted data into CSV files based on individual weather stations.
 
-## Reading the Data
+### Python Script for Downloading and Extracting Data
 
-We begin by reading the data into R using the `read.csv` function. This function reads a file in table format and creates a data frame from it.
+The following Python script automates the process of downloading and extracting GSOD data files:
 
-```{r}
-weather_data <- read.csv("../data/cleaned_data.csv")
+```
+import requests
+import os
+import tarfile
+from tqdm import tqdm  # For progress bar (optional)
+from concurrent.futures import ThreadPoolExecutor
+
+# Function to fetch and parse directory listing for a given year
+def fetch_directory_listing(year):
+    base_url = f"https://www.ncei.noaa.gov/data/global-summary-of-the-day/archive/{year}.tar.gz"
+    return [base_url]
+
+# Function to extract a tar.gz archive and delete the archive after extraction
+def extract_tar_file(archive_path, extract_dir):
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            tar.extractall(path=extract_dir)
+        print(f"Extracted: {archive_path}")
+
+        # Delete the archive after extraction
+        os.remove(archive_path)
+        print(f"Deleted: {archive_path}")
+    except Exception as e:
+        print(f"Error extracting {archive_path}: {e}")
+
+# Function to download and extract a specific archive
+def download_and_extract_archive(archive_url, extract_dir, year):
+    archive_name = archive_url.split("/")[-1]
+    local_archive_path = os.path.join(extract_dir, archive_name)
+
+    if os.path.exists(local_archive_path):
+        print(f"Skipping {archive_name}, already downloaded and extracted.")
+        os.remove(local_archive_path)
+        print(f"Removed {archive_name}")
+        return
+
+    try:
+        # Download the archive
+        response = requests.get(archive_url, stream=True)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
+        # Display progress bar for download
+        with open(local_archive_path, "wb") as file, tqdm(
+            desc=f"{year} - {archive_name}",  # Print current year and archive name
+            total=int(response.headers.get("content-length", 0)),
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar:
+            for data in response.iter_content(chunk_size=1024):
+                file.write(data)
+                bar.update(len(data))
+
+        print(f"Downloaded: {archive_name}")
+
+        # Extract the downloaded archive
+        extract_tar_file(local_archive_path, extract_dir)
+    except Exception as e:
+        print(f"Error downloading {archive_name}: {e}")
+
+# Main function to parallelize the download and extraction process
+def main():
+    start_year = 1929
+    end_year = 2023
+    download_dir = "gsod_archive_parallel"  # Base local directory to store downloaded and extracted archives
+    os.makedirs(download_dir, exist_ok=True)
+
+    with ThreadPoolExecutor(max_workers=24) as executor:
+        for year in range(start_year, end_year + 1):
+
+
+
+            year_dir = os.path.join(download_dir, str(year))
+            os.makedirs(year_dir, exist_ok=True)
+
+            try:
+                archives_to_download = fetch_directory_listing(year)
+                for archive_url in archives_to_download:
+                    executor.submit(
+                        download_and_extract_archive, archive_url, year_dir, year
+                    )
+            except Exception as e:
+                print(f"Error processing year {year}: {e}")
+
+    print("Download and extraction completed.")
+
+if __name__ == "__main__":
+    main()
 ```
 
-## Inspecting the Data
+This script performs the following steps:
 
-After loading the data, it’s important to inspect the first few rows to understand its structure and identify any immediate issues.
+1. **Fetch Directory Listing**: Constructs the download URL for the tar.gz file for each year.
+2. **Download and Extract Archives**: Downloads the tar.gz file for each year and extracts its contents. It also deletes the tar.gz file after extraction to save space.
+3. **Parallel Execution**: Utilizes Python's `concurrent.futures.ThreadPoolExecutor` to download and extract multiple files concurrently, speeding up the process.
 
-```{r}
-head(weather_data)
+### Organizing Data into Namewise CSV Files
+
+After downloading and extracting the data, the next step is to organize the files into individual CSV files for each weather station. This is done using the following R script:
+
+```r
+# Load necessary libraries
+library(data.table)
+
+# Set the main directory containing subdirectories by year
+main_directory <- "/run/media/pupperemeritus/Seagate Expansion Drive/gsod_archive_parallel"
+
+# Define the desired column names for the output CSV files
+desired_column_names <- c(
+  "STATION", "DATE", "LATITUDE", "LONGITUDE", "ELEVATION", "NAME",
+  "TEMP", "TEMP_ATTRIBUTES", "DEWP", "DEWP_ATTRIBUTES", "SLP",
+  "SLP_ATTRIBUTES", "STP", "STP_ATTRIBUTES", "VISIB", "VISIB_ATTRIBUTES",
+  "WDSP", "WDSP_ATTRIBUTES", "MXSPD", "GUST", "MAX", "MAX_ATTRIBUTES",
+  "MIN", "MIN_ATTRIBUTES", "PRCP", "PRCP_ATTRIBUTES", "SNDP", "FRSHTT"
+)
+
+# Get a list of all subdirectories (years) in the main directory
+subdirectories <- list.dirs(main_directory, recursive = FALSE)
+
+# Loop through each subdirectory (year)
+for (subdir in subdirectories) {
+  # Log progress
+  cat("Processing files in directory:", subdir, "\n")
+
+  # Set the working directory to the current subdirectory
+  setwd(subdir)
+
+  # Get a list of all CSV files in the current subdirectory
+  csv_files <- list.files(pattern = "*.csv")
+
+  # Loop through each CSV file in the current subdirectory
+  for (file in csv_files) {
+    # Log progress
+    cat("Processing file:", file, "\n")
+
+    # Read the CSV file into a data table
+    data <- read.csv(file, header = TRUE, sep = ",")
+
+    # Get unique station names from the data
+    unique_stations <- unique(data$NAME)
+
+    # Loop through each unique station
+    for (station in unique_stations) {
+      # Subset the data for the current station
+      station_data <- data[data$NAME == station, ]
+
+      # Define the output file name based on the station name
+      output_file <- file.path("/home/pupperemeritus/minorproject2/combined_data/", paste0(station, ".csv"))
+
+      # Create the output directory if it doesn't exist
+      if (!dir.exists(dirname(output_file))) {
+        dir.create(dirname(output_file), recursive = TRUE)
+      }
+
+      # Write the station data to the output file with desired column names
+      write.table(station_data, file = output_file, row.names = FALSE, col.names = FALSE, append = TRUE)
+    }
+  }
+
+  # Log progress
+  cat("Completed processing files in directory:", subdir, "\n")
+}
+
+# Log completion of the entire script
+cat("All files processed successfully.\n")
+
+# Set the working directory back to the main directory after processing all subdirectories
+setwd(main_directory)
 ```
 
-This command helps to view the first six rows of the data frame and check the column names, types of data, and some initial values.
+This R script does the following:
 
-## Converting Date Column
+1. **Set Main Directory**: Specifies the main directory containing subdirectories for each year.
+2. **Process Each Subdirectory**: Iterates through each year's directory, processing all CSV files within.
+3. **Organize Data by Station**: For each CSV file, extracts data for each unique weather station and writes it to a separate CSV file named after the station.
+
+### Combining Data for Indian Stations
+
+Finally, a separate R script is used to combine data for Indian stations into a single CSV file:
+
+```r
+library(dplyr)
+
+# Get the list of files in the directory
+files <- list.files("indian_stations_output", full.names = TRUE)
+
+# Initialize an empty data frame to hold the combined data
+combined_data <- data.frame()
+desired_column_names <- c(
+  "STATION", "DATE", "LATITUDE", "LONGITUDE", "ELEVATION", "NAME",
+  "TEMP", "TEMP_ATTRIBUTES", "DEWP", "DEWP_ATTRIBUTES", "SLP",
+  "SLP_ATTRIBUTES", "STP", "STP_ATTRIBUTES", "VISIB", "VISIB_ATTRIBUTES",
+  "WDSP", "WDSP_ATTRIBUTES", "MXSPD", "GUST", "MAX", "MAX_ATTRIBUTES",
+  "MIN", "MIN_ATTRIBUTES", "PRCP", "PRCP_ATTRIBUTES", "SNDP", "FRSHTT"
+)
+
+# Loop through each file and read it into a data frame
+for (file in files) {
+  # Read the file into a data frame
+  data <- read.csv(file, sep = " ", header = FALSE)
+  print(data)
+  # Append the data to the combined data frame
+  combined_data <- bind_rows(combined_data, data)
+}
+
+# Write the combined data to a csv file
+write.csv(combined_data, "combined_data.csv", sep = ",", row.names = FALSE, col.names = desired_column_names)
+```
+
+This script performs the following tasks:
+
+1. **List Files**: Retrieves all files in the directory containing data for Indian stations.
+2. **Combine Data**: Reads each file and combines the data into a single data frame.
+3. **Write Combined Data**: Outputs the combined data frame to a CSV file named `combined_data.csv`.
+
+These steps ensure that the data is downloaded, extracted, and organized efficiently for further analysis.## Converting Date Column
 
 The `DATE` column, which contains the date of the observation, is initially read as a character string. We convert it to a date format using the `as.Date` function. This is important for any time series analysis or operations that require date manipulation.
 
-```{r}
+```r
 weather_data$DATE <- as.Date(weather_data$DATE)
 ```
 
@@ -64,7 +260,7 @@ weather_data$DATE <- as.Date(weather_data$DATE)
 
 To analyze seasonal patterns, we extract the day of the year (ranging from 1 to 365 or 366 for leap years) from the `DATE` column using the `yday` function from the `lubridate` package.
 
-```{r}
+```r
 weather_data$DAY_OF_YEAR <- yday(weather_data$DATE)
 ```
 
@@ -72,7 +268,7 @@ weather_data$DAY_OF_YEAR <- yday(weather_data$DATE)
 
 The dataset contains several columns representing different weather attributes, such as temperature, dew point, wind speed, etc. We identify these columns and ensure they are in numeric format, which is necessary for performing statistical calculations.
 
-```{r}
+```r
 numeric_cols <- c("TEMP_SI", "DEWP_SI", "WDSP_SI", "MXSPD_SI", "MAX_SI", "MIN_SI", "PRCP_SI", "SNDP_SI")
 weather_data[numeric_cols] <- lapply(weather_data[numeric_cols], as.numeric)
 ```
@@ -81,20 +277,16 @@ weather_data[numeric_cols] <- lapply(weather_data[numeric_cols], as.numeric)
 
 Missing values in the dataset can cause errors in analysis and visualization. We handle missing values by removing rows with NA values in any of the numeric columns. Alternatively, more sophisticated methods such as imputation could be used, but for simplicity, we remove these rows.
 
-```{r}
+```r
 weather_data <- weather_data %>%
     filter(complete.cases(weather_data[numeric_cols]))
 ```
-
-## Identifying and Handling Outliers
-
-Outliers can significantly impact the results of an analysis. To identify outliers, we calculate the mean and standard deviation for each numeric column, grouped by the day of the year and station name. We then filter out values that are beyond a certain number of standard deviations from the mean.
 
 ### Calculating Mean and Standard Deviation
 
 We create a lookup table that contains the mean and standard deviation for each day of the year and each station.
 
-```{r}
+```r
 mean_sd_lookup <- weather_data %>%
     group_by(DAY_OF_YEAR, NAME) %>%
     summarise(
@@ -118,265 +310,535 @@ mean_sd_lookup <- weather_data %>%
     )
 ```
 
-### Filtering Outliers
 
-We then filter the data to identify and handle extreme values. Here, we consider values that are beyond 3, 4, and 5 standard deviations from the mean as extreme.
+# Summary of preprocessing
 
-```{r}
-multipliers <- c(3, 4, 5)
-extreme_values_by_multiplier <- list()
-
-for (multiplier in multipliers) {
-    extreme_values <- weather_data %>%
-        left_join(mean_sd_lookup, by = c("DAY_OF_YEAR", "NAME")) %>%
-        filter(
-            abs(TEMP_SI - TEMP_SI_mean) > multiplier * TEMP_SI_sd |
-            abs(DEWP_SI - DEWP_SI_mean) > multiplier * DEWP_SI_sd |
-            abs(WDSP_SI - WDSP_SI_mean) > multiplier * WDSP_SI_sd |
-            abs(MXSPD_SI - MXSPD_SI_mean) > multiplier * MXSPD_SI_sd |
-            abs(MAX_SI - MAX_SI_mean) > multiplier * MAX_SI_sd |
-            abs(MIN_SI - MIN_SI_mean) > multiplier * MIN_SI_sd |
-            abs(PRCP_SI - PRCP_SI_mean) > multiplier * PRCP_SI_sd |
-            abs(SNDP_SI - SNDP_SI_mean) > multiplier * SNDP_SI_sd
-        ) %>%
-        select(NAME, DATE, DAY_OF_YEAR, TEMP_SI, DEWP_SI, WDSP_SI, MXSPD_SI, MAX_SI, MIN_SI, PRCP_SI, SNDP_SI)
-
-    extreme_values_by_multiplier[[as.character(multiplier)]] <- extreme_values
-}
-```
-
-# Summary
-
-This detailed preprocessing section covered downloading the data, converting and formatting date columns, handling missing values, and identifying outliers. These steps ensure that the data is clean and ready for subsequent analysis and visualization.
+This detailed preprocessing section covered downloading the data, converting and formatting date columns, and handling missing values. These steps ensure that the data is clean and ready for subsequent analysis and visualization.
 
 
 
-# Extreme Value Analysis
+### Interactive Plots and Their Descriptions
 
-## Calculation of Extreme Values
+#### 1. Weather Station Analysis
 
-We calculate extreme values based on 3, 4, and 5 standard deviations from the mean, grouped by the day of the year and station name. This helps in identifying significant deviations in weather attributes.
+This interactive plot allows users to visualize and analyze weather data from different stations on a map, select specific stations, and view detailed statistics.
 
-```{r}
-# Calculate and filter extreme values (3, 4, 5 standard deviations from the mean) grouped by day of the year and station name
-multipliers <- c(3, 4, 5)
-extreme_values_by_multiplier <- list()
+**Code:**
 
-# Create a lookup table for mean and standard deviation by day of the year and station name
-mean_sd_lookup <- weather_data %>%
-    group_by(DAY_OF_YEAR, NAME) %>%
-    summarise(
-        TEMP_SI_mean = mean(TEMP_SI, na.rm = TRUE),
-        TEMP_SI_sd = sd(TEMP_SI, na.rm = TRUE),
-        DEWP_SI_mean = mean(DEWP_SI, na.rm = TRUE),
-        DEWP_SI_sd = sd(DEWP_SI, na.rm = TRUE),
-        WDSP_SI_mean = mean(WDSP_SI, na.rm = TRUE),
-        WDSP_SI_sd = sd(WDSP_SI, na.rm = TRUE),
-        MXSPD_SI_mean = mean(MXSPD_SI, na.rm = TRUE),
-        MXSPD_SI_sd = sd(MXSPD_SI, na.rm = TRUE),
-        MAX_SI_mean = mean(MAX_SI, na.rm = TRUE),
-        MAX_SI_sd = sd(MAX_SI, na.rm = TRUE),
-        MIN_SI_mean = mean(MIN_SI, na.rm = TRUE),
-        MIN_SI_sd = sd(MIN_SI, na.rm = TRUE),
-        PRCP_SI_mean = mean(PRCP_SI, na.rm = TRUE),
-        PRCP_SI_sd = sd(PRCP_SI, na.rm = TRUE),
-        SNDP_SI_mean = mean(SNDP_SI, na.rm = TRUE),
-        SNDP_SI_sd = sd(SNDP_SI, na.rm = TRUE),
-        .groups = "drop"
-    )
+```r
+library(shiny)
+library(leaflet)
+library(dplyr)
+library(lubridate)
 
-for (multiplier in multipliers) {
-    extreme_values <- weather_data %>%
-        left_join(mean_sd_lookup, by = c("DAY_OF_YEAR", "NAME")) %>%
-        filter(
-            abs(TEMP_SI - TEMP_SI_mean) > multiplier * TEMP_SI_sd |
-                abs(DEWP_SI - DEWP_SI_mean) > multiplier * DEWP_SI_sd |
-                abs(WDSP_SI - WDSP_SI_mean) > multiplier * WDSP_SI_sd |
-                abs(MXSPD_SI - MXSPD_SI_mean) > multiplier * MXSPD_SI_sd |
-                abs(MAX_SI - MAX_SI_mean) > multiplier * MAX_SI_sd |
-                abs(MIN_SI - MIN_SI_mean) > multiplier * MIN_SI_sd |
-                abs(PRCP_SI - PRCP_SI_mean) > multiplier * PRCP_SI_sd |
-                abs(SNDP_SI - SNDP_SI_mean) > multiplier * SNDP_SI_sd
-        ) %>%
-        select(NAME, DATE, DAY_OF_YEAR, TEMP_SI, DEWP_SI, WDSP_SI, MXSPD_SI, MAX_SI, MIN_SI, PRCP_SI, SNDP_SI)
+# Load data outside server for better performance
+weather_data <- read.csv("./data/cleaned_data.csv")
+station_data <- NULL
 
-    extreme_values_by_multiplier[[as.character(multiplier)]] <- extreme_values
-}
-
-```
-
-# Shiny Application for viewing frequency of extremities.
-
-A Shiny application is created to allow users to interactively explore extreme values. The user can select a station, extremity level, and attribute to visualize the data.
-
-```{r}
+# UI
 ui <- fluidPage(
-    titlePanel("Weather Station Extreme Values Analysis"),
-    sidebarLayout(
-        sidebarPanel(
-            selectInput("station", "Select Station:", choices = unique(weather_data$NAME)),
-            selectInput("multiplier", "Select Extremity Level:", choices = multipliers, selected = 3),
-            selectInput("attribute", "Select Attribute:", choices = c(
-                "Temperature" = "TEMP_SI",
-                "Dew Point" = "DEWP_SI",
-                "Wind Speed" = "WDSP_SI",
-                "Max Wind Speed" = "MXSPD_SI",
-                "Max Temperature" = "MAX_SI",
-                "Min Temperature" = "MIN_SI",
-                "Precipitation" = "PRCP_SI",
-                "Snow Depth" = "SNDP_SI"
-            ), selected = "TEMP_SI")
-        ),
-        mainPanel(
-            plotOutput("extremePlot")
-        )
-    )
+  titlePanel("Weather Station Analysis"),
+
+  # Leaflet map
+  leafletOutput("map"),
+
+  # Dropdown menu for selecting weather stations
+  selectInput("station", "Select Station:", choices = NULL),
+
+  # Display station details
+  verbatimTextOutput("station_details"),
+
+  # Display statistics
+  verbatimTextOutput("stats")
 )
 
-server <- function(input, output) {
-    selected_data <- reactive({
-        req(input$station, input$multiplier, input$attribute)
-        multiplier <- as.character(input$multiplier)
-        extreme_values_by_multiplier[[multiplier]] %>%
-            filter(NAME == input$station) %>%
-            select(DATE, DAY_OF_YEAR, NAME, !!sym(input$attribute))
-    })
+# Server
+server <- function(input, output, session) {
+  # Initialize map
+  output$map <- renderLeaflet({
+    leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = 78.9629, lat = 20.5937, zoom = 5)
+  })
 
-    output$extremePlot <- renderPlot({
-        data <- selected_data()
-        attribute <- input$attribute
+  # Update station dropdown choices
+  observe({
+    updateSelectInput(session, "station", choices = unique(weather_data$NAME))
+  })
 
-        if (nrow(data) > 0) {
-            data <- data %>%
-                filter(!is.na(!!sym(attribute))) %>%
-                group_by(DAY_OF_YEAR) %>%
-                summarise(count = n(), .groups = 'drop')
+  # Filter data for selected station
+  selected_station <- reactive({
+    req(input$station)
+    filter(weather_data, NAME == input$station)
+  })
 
-            ggplot(data, aes(x = DAY_OF_YEAR, y = count, fill = count)) +
-                geom_bar(stat = "identity", alpha = 0.8) +
-                labs(
-                    title = paste("Extreme Values for Station:", input$station),
-                    x = "Day of Year", y = "Count",
-                    fill = "Count"
-                ) +
-                scale_fill_viridis_c(option = "D") +
-                theme_minimal() +
-                theme(
-                    text = element_text(family = "Arial", color = "black"),
-                    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
-                    axis.title = element_text(size = 14),
-                    axis.text = element_text(size = 12),
-                    legend.title = element_text(size = 14),
-                    legend.text = element_text(size = 12),
-                    panel.grid.major = element_line(color = "grey90"),
-                    panel.grid.minor = element_blank(),
-                    panel.background = element_rect(fill = "white", color = "black"),
-                    plot.background = element_rect(fill = "white", color = "black")
-                ) +
-                scale_y_continuous(limits = c(0, NA))
-        } else {
-            ggplot() +
-                labs(
-                    title = "No extreme values found for the selected station and extremity level.",
-                    x = "Day of Year", y = "Count"
-                )
-        }
-    })
+  # Update map marker when station is selected
+  observe({
+    station <- selected_station()
+    if (nrow(station) > 0) {
+      leafletProxy("map") %>%
+        clearMarkers() %>%
+        addMarkers(
+          data = station,
+          lng = ~LONGITUDE,
+          lat = ~LATITUDE,
+          popup = ~ paste(
+            "Station:", STATION, "<br>",
+            "Name:", NAME, "<br>",
+            "Elevation:", ELEVATION, "<br>",
+            "Temperature:", TEMP_SI, "°C"
+          ),
+          label = ~ paste("Avg Temp:", round(mean(TEMP_SI, na.rm = TRUE), 2), "°C"),
+          labelOptions = labelOptions(direction = "auto")
+        )
+    }
+  })
+
+  # Calculate average temperature and most occurrence of FRSHTT type year-wise
+  output$stats <- renderPrint({
+    station <- selected_station()
+    if (nrow(station) > 0) {
+      stats <- station %>%
+        group_by(year = year(DATE)) %>%
+        summarise(
+          Avg_Temperature = mean(TEMP_SI, na.rm = TRUE),
+          Most_FRSHTT = names(which.max(table(FRSHTT)))
+        )
+      print(stats)
+    } else {
+      "No data available for selected station."
+    }
+  })
 }
 
+# Run the application
 shinyApp(ui = ui, server = server)
 ```
 
-# Data Visualization
+**Description:**
 
-## Time Series Plot for Temperature
+- **Map Visualization**: The application initializes a Leaflet map centered over India.
+- **Station Selection**: Users can select a weather station from a dropdown menu, which dynamically updates the available choices based on the loaded data.
+- **Marker Display**: When a station is selected, a marker appears on the map at the station's location, displaying details such as station name, elevation, and average temperature.
+- **Statistics Display**: The application calculates and displays average yearly temperature and the most frequent weather condition (FRSHTT) for the selected station.
 
-This plot shows the temperature trends over time for different weather stations.
+#### 2. Seasonal Weather Clustering
+
+This interactive plot clusters weather stations based on seasonal weather data and visualizes them on a map, allowing users to explore different clusters for each season.
+
+**Code:**
+
+```r
+library(shiny)
+library(cluster)
+library(dplyr)
+library(leaflet)
+library(shinydashboard)
+library(htmlwidgets)
+
+# Load data
+weather_data <- read.csv("./data/cleaned_data.csv")
+
+# Convert DATE column to Date type
+weather_data$DATE <- as.Date(weather_data$DATE)
+
+# Extract season information from dates (assuming seasons are defined as quarters)
+weather_data$Season <- cut(
+  as.POSIXlt(weather_data$DATE)$mon + 1, # Adding 1 because months are indexed from 0
+  breaks = c(0, 2, 3, 6, 9, 11, 12),
+  labels = c("Winter", "Spring", "Summer", "Monsoon", "Fall", "Winter"), # Include Winter twice for full cycle
+  include.lowest = TRUE
+)
+
+# Determine the number of clusters (you can change this)
+num_clusters <- 6
+
+# Create a color palette for clusters
+cluster_colors <- rainbow(num_clusters)
+
+createSeasonMap <- function(season_name, zoom_level = 2) {
+  # Filter data for the specified season
+  season_data <- weather_data %>% filter(Season == season_name)
+
+  # Group by Station and calculate average values
+  grouped_data <- season_data %>%
+    group_by(STATION) %>%
+    summarize(
+      AVG_TEMP_SI = mean(TEMP_SI, na.rm = TRUE),
+      AVG_PRCP_SI = mean(PRCP_SI, na.rm = TRUE),
+      AVG_ELEVATION = mean(ELEVATION, na.rm = TRUE),
+      LONGITUDE = first(LONGITUDE), # Add longitude column
+      LATITUDE = first(LATITUDE) # Add latitude column
+    ) %>%
+    ungroup()
+
+  # Scale the data
+  scaled_data <- scale(grouped_data[, c("AVG_TEMP_SI", "AVG_PRCP_SI", "AVG_ELEVATION")])
+
+  # Perform k-means clustering
+  kmeans_result <- kmeans(scaled_data, centers = num_clusters)
+
+  # Add cluster assignments to the grouped data
+  grouped_data$Cluster <- kmeans_result$cluster
+
+  # Calculate cluster sizes for adjusting zoom level
+  cluster_sizes <- table(kmeans_result$cluster)
+  max_cluster_size <- max(cluster_sizes)
+  zoom_adjustment <- ceiling(log10(max_cluster_size)) # Adjust zoom based on cluster size
+
+  # Create a leaflet map to visualize the clustered data for this season
+  map <- leaflet(data = grouped_data) %>%
+    addTiles() %>%
+    addCircleMarkers(
+      radius = 5,
+      color = cluster_colors[grouped_data$Cluster],
+      fillOpacity = 0.8, # Adjust fill opacity
+      # clusterOptions = markerClusterOptions()
+    ) %>%
+    addLegend(
+      "bottomright",
+      colors = cluster_colors,
+      labels = paste("Cluster", 1:num_clusters),
+      opacity = 1
+    ) %>%
+    setView(lng = mean(grouped_data$LONGITUDE), lat = mean(grouped_data$LATITUDE), zoom = zoom_level + zoom_adjustment) %>%
+    # Add JavaScript code to handle marker click events and show popup with details
+    onRender("
+      function(map) {
+        this.on('click', function(event) {
+          var marker = event.layer;
+          marker.bindPopup(
+            '<b>Station:</b> ' + marker.options.title + '<br>' +
+            '<b>Avg Temperature:</b> ' + marker.options.avg_temp + '<br>' +
+            '<b>Avg Precipitation:</b> ' + marker.options.avg_prcp + '<br>' +
+            '<b>Avg Elevation:</b> ' + marker.options.avg_elevation
+          ).openPopup();
+        });
+      }
+    ")
+  for (i in 1:nrow(grouped_data)) {
+    map <- map %>%
+      addCircleMarkers(
+        lng = grouped_data$LONGITUDE[i],
+        lat = grouped_data$LATITUDE[i],
+        radius = 5,
+        color = cluster_colors[grouped_data$Cluster[i]],
+        fillOpacity = 0.8,
+        popup = paste(
+          "<b>Station:</b> ", grouped_data$STATION[i], "<br>",
+          "<b>Avg Temperature:</b> ", round(grouped_data$AVG_TEMP_SI[i], 2), "<br>",
+          "<b>Avg Precipitation:</b> ", round(grouped_data$AVG_PRCP_SI[i], 2), "<br>",
+          "<b>Avg Elevation:</b> ", round(grouped_data$AVG_ELEVATION[i], 2)
+        )
+      )
+  }
+
+  return(map)
+}
+
+# Define UI for the application
+ui <- dashboardPage(
+  skin = "blue",
+  dashboardHeader(
+    title = "Seasonal Weather Clustering",
+    titleWidth = 600
+  ),
+  dashboardSidebar(
+    width = 200,
+    sidebarMenu(
+      id = "tabs",
+      menuItem("Winter", tabName = "winter", icon = icon("snowflake")), # Updated icon names
+      menuItem("Spring", tabName = "spring", icon = icon("tree")), # Updated icon names
+      menuItem("Summer", tabName = "summer", icon = icon("sun")), # Updated icon names
+      menuItem("Monsoon", tabName = "monsoon", icon = icon("cloud-rain")), # Updated icon names
+      menuItem("Fall", tabName = "fall", icon = icon("leaf")) # Updated icon names
+    )
+  ),
+  dashboardBody(
+    tags$style(
+      HTML("
+      .content-wrapper, .right-side {
+        margin-left: 200px; /* Sidebar width */
+      }
+      .main-sidebar {
+        width: 200px;
+      }
+      .leaflet-container {
+        height: 95vh !important;
+        width: calc(100vw - 210px) !important; /* Full width minus sidebar width */
+        margin: 
+
+0 auto;
+        padding: 0;
+      }
+      ")
+    ),
+    tabItems(
+      tabItem(
+        tabName = "winter",
+        leafletOutput("map_winter", width = "100%", height = "100%")
+      ),
+      tabItem(
+        tabName = "spring",
+        leafletOutput("map_spring", width = "100%", height = "100%")
+      ),
+      tabItem(
+        tabName = "summer",
+        leafletOutput("map_summer", width = "100%", height = "100%")
+      ),
+      tabItem(
+        tabName = "fall",
+        leafletOutput("map_fall", width = "100%", height = "100%")
+      ),
+      tabItem(
+        tabName = "monsoon",
+        leafletOutput("map_monsoon", width = "100%", height = "100%")
+      )
+    )
+  )
+)
+
+# Define server logic
+server <- function(input, output) {
+  output$map_winter <- renderLeaflet({
+    createSeasonMap("Winter")
+  })
+  output$map_spring <- renderLeaflet({
+    createSeasonMap("Spring")
+  })
+  output$map_summer <- renderLeaflet({
+    createSeasonMap("Summer")
+  })
+  output$map_monsoon <- renderLeaflet({
+    createSeasonMap("Monsoon")
+  })
+  output$map_fall <- renderLeaflet({
+    createSeasonMap("Fall")
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+```
+
+**Description:**
+
+- **Seasonal Data**: The application divides the weather data into seasons and clusters the stations based on average temperature, precipitation, and elevation.
+- **Cluster Visualization**: Each season's data is visualized on a map with markers representing different clusters. Each marker provides a popup with detailed information about the station's average temperature, precipitation, and elevation.
+- **Interactive Map**: Users can switch between different seasons using the sidebar menu, and the map dynamically updates to show the clusters for the selected season.
+
+#### 3. Weather Forecasting App
+
+This interactive plot provides temperature forecasts for a selected weather station based on a SARIMA model.
+
+**Code:**
+
+```r
+library(shiny)
+library(astsa)
+library(dplyr)
+
+# Load your cleaned data
+weather_data <- read.csv("cleaned_data.csv")
+
+# Define UI
+ui <- fluidPage(
+  titlePanel("Weather Forecasting App"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("station", "Select Station:",
+        choices = unique(weather_data$NAME)
+      ),
+      numericInput("forecast_days", "Number of Forecast Days:", value = 7, min = 1, max = 30),
+      actionButton("submit", "Submit")
+    ),
+    mainPanel(
+      plotOutput("forecast_plot")
+    )
+  )
+)
+
+server <- function(input, output) {
+  observeEvent(input$submit, {
+    # Filter data based on selected station
+    selected_station_data <- filter(weather_data, NAME == input$station)
+
+    if (nrow(selected_station_data) == 0) {
+      # Handle case where no data is available for the selected station
+      # You can show an error message or take appropriate action
+      return(NULL)
+    }
+
+    # Check for missing values in the temperature data
+    if (any(is.na(selected_station_data$TEMP_SI))) {
+      # Handle missing values (e.g., impute or remove)
+      # Here's a simple example of imputation with mean
+      selected_station_data$TEMP_SI[is.na(selected_station_data$TEMP_SI)] <- mean(selected_station_data$TEMP, na.rm = TRUE)
+    }
+
+    # Convert date to time series object
+    weather_ts <- ts(selected_station_data$TEMP_SI, frequency = 365)
+
+    # Fit SARIMA model using astsa package
+    # Adjust seasonal lag if needed (e.g., s = 12 for monthly data)
+    sarima_model <- arima(weather_ts, order = c(1, 0, 1), seasonal = list(order = c(1, 0, 1), period = 12))
+
+    # Forecast
+    forecast_values <- forecast(sarima_model, h = input$forecast_days)
+
+    # Plot forecast
+    output$forecast_plot <- renderPlot({
+      plot(forecast_values, main = "Temperature Forecast", xlab = "Date", ylab = "Temperature")
+    })
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+```
+
+**Description:**
+
+- **Station Selection**: Users select a weather station from a dropdown menu.
+- **Forecast Input**: Users input the number of days for which they want the temperature forecast.
+- **Forecast Generation**: The application fits a SARIMA model to the selected station's temperature data and generates a forecast for the specified number of days.
+- **Forecast Visualization**: The forecasted temperatures are plotted, providing a visual representation of the predicted temperature trends.
+
+These interactive plots leverage the capabilities of Shiny and Leaflet to provide users with a rich, interactive experience for exploring weather data, clustering, and forecasting.
+
+
+### Documentation for Exploratory Plots
+
+This documentation describes the exploratory plots generated from the weather data. These plots include a faceted density plot, a temperature distribution map across India, and a time series analysis of temperature data.
+
+#### 1. Faceted Density Plot of Temperature by Weather Attribute
+
+**Objective:**
+
+The purpose of this plot is to visualize the distribution of temperatures associated with different weather attributes (e.g., fog, rain, snow).
+
+**Code:**
 
 ```{r}
+library(ggplot2)
+library(viridis)
+library(tidyr)
+
+# Load data
+weather_data <- read.csv("../data/cleaned_data.csv")
+
+# Combine the attributes into a single dataframe
+weather_attributes <- c("Fog", "Rain_Drizzle", "Snow_Ice_Pellets", "Hail", "Thunder", "Tornado_Funnel_Cloud")
+combined_data <- cbind(weather_data["TEMP_SI"], sapply(weather_attributes, function(attr) factor(weather_data[[attr]])))
+
+# Reshape the data for plotting
+combined_data_long <- tidyr::pivot_longer(combined_data, cols = -TEMP_SI, names_to = "Attribute", values_to = "Presence")
+
+# Faceted density plot of temperature by weather attributes with discrete color scale
+density_plot <- ggplot(combined_data_long, aes(x = TEMP_SI, fill = Presence)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~Attribute, scales = "free") + # Facet by weather attributes
+  labs(
+    title = "Density Plot of Temperature by Weather Attribute",
+    x = "Temperature (°C)",
+    y = "Density"
+  ) +
+  scale_fill_viridis_d(option = "D") + # Use Viridis color palette
+  theme_minimal()
+
+# Print the plot
+print(density_plot)
+```
+
+**Description:**
+
+- **Data Preparation**: The weather data is combined with weather attributes, reshaped into a long format for plotting.
+- **Plotting**: The density plot shows the distribution of temperatures for each weather attribute, with facets for each attribute and colors indicating the presence or absence of the attribute.
+- **Color Scale**: Uses the Viridis discrete color palette for better visual distinction and accessibility.
+
+#### 2. Temperature Distribution Across India
+
+**Objective:**
+
+To visualize the spatial distribution of temperature readings across India.
+
+**Code:**
+
+```{r}
+#library(ggplot2)
+
+# Load data
+#weather_data <- read.csv("./data/cleaned_data.csv")
+
+# Plot temperature values on a map of India with a contrast gradient
+ggplot(weather_data, aes(x = LONGITUDE, y = LATITUDE, color = TEMP_SI)) +
+  geom_point() +
+  labs(
+    title = "Temperature Distribution Across India",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Temperature (°C)"
+  ) +
+  scale_color_gradientn(colors = c("blue", "green", "red")) # Contrast gradient color scale
+```
+
+**Description:**
+
+- **Data**: Longitude, latitude, and temperature data points are plotted to show the geographic distribution of temperatures.
+- **Color Scale**: A gradient color scale (blue to red) represents the temperature values, providing a visual contrast between different temperature ranges.
+- **Output**: The plot is saved as "india_map.png" with specified dimensions.
+
+#### 3. Time Series Plot of Temperature
+
+**Objective:**
+
+To analyze the temporal trend of temperature data over time.
+
+**Code:**
+
+```{r}
+# library(ggplot2)
+
+# Load data
+# weather_data <- read.csv("./data/cleaned_data.csv")
+
+# Time series analysis
 ggplot(weather_data, aes(x = DATE, y = TEMP_SI)) +
   geom_line() +
-  labs(title = "Temperature Trends Over Time", x = "Date", y = "Temperature (°C)") +
-  facet_wrap(~STATION)
+  labs(
+    title = "Time Series Plot of Temperature",
+    x = "Date",
+    y = "Temperature (°C)"
+  )
+
 ```
 
-## Histograms/Density Plots for Temperature and Dew Point
+**Description:**
 
-These plots illustrate the distribution of temperature and dew point values.
+- **Data**: Plots temperature against date to show how temperature changes over time.
+- **Visualization**: A line plot is used to represent the continuous nature of the time series data.
+- **Output**: The plot is saved as "time_series_plot.png" with specified dimensions.
 
-```{r}
-ggplot(weather_data, aes(x = TEMP_SI)) +
-  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
-  labs(title = "Temperature Distribution", x = "Temperature (°C)", y = "Frequency") +
-  facet_wrap(~STATION)
+In this documentation, we've covered a comprehensive journey from data preprocessing to interactive applications for weather analysis. Here's a summary of the key stages and components:
 
-ggplot(weather_data, aes(x = DEWP_SI)) +
-  geom_histogram(binwidth = 1, fill = "lightgreen", color = "black") +
-  labs(title = "Dew Point Distribution", x = "Dew Point (°C)", y = "Frequency") +
-  facet_wrap(~STATION)
-```
+1. **Data Preprocessing:**
+   - The preprocessing stage involved fetching weather data from NOAA archives, extracting and organizing it by year and station, and combining stations into CSV files based on station names.
+   - Additionally, the data underwent cleaning and formatting to ensure consistency and usability for analysis.
 
-## Scatter Plot for Temperature vs Dew Point
+2. **Exploratory Data Analysis (EDA):**
+   - The EDA phase included interactive plots created using R packages such as `ggplot2`, `leaflet`, and `viridis`.
+   - A faceted density plot depicted temperature distribution by various weather attributes, providing insights into temperature variations under different weather conditions.
+   - A temperature distribution map across India showcased the geographic spread of temperature readings, highlighting regional variations.
+   - A time series plot illustrated the temporal trends of temperature data, aiding in understanding long-term temperature fluctuations.
 
-This scatter plot shows the relationship between temperature and dew point.
+3. **Interactive Applications:**
+   - The documentation further delved into interactive applications developed using Shiny, a web application framework in R.
+   - The Shiny applications included features such as selecting weather stations, visualizing temperature distributions on maps, and forecasting temperature trends.
+   - Users could interactively explore weather data, analyze patterns, and generate forecasts tailored to specific stations and timeframes.
 
-```{r}
-ggplot(weather_data, aes(x = DEWP_SI, y = TEMP_SI)) +
-  geom_point() +
-  labs(title = "Temperature vs Dew Point", x = "Dew Point (°C)", y = "Temperature (°C)") +
-  facet_wrap(~STATION)
-```
+4. **Conclusion:**
+   - The entire process, from data preprocessing to interactive apps, demonstrated a comprehensive approach to weather data analysis and visualization.
+   - Through various plots, maps, and interactive features, users gained insights into temperature patterns, weather attributes, and geographic distributions.
+   - These analyses and applications serve as valuable tools for researchers, analysts, and stakeholders involved in weather-related studies, decision-making, and planning.
 
-## Box Plots for Temperature by Weather Event
-
-Box plots display the distribution of temperature values in relation to different weather events such as fog.
-
-```{r}
-ggplot(weather_data, aes(x = Fog, y = TEMP_SI)) +
-  geom_boxplot(fill = "lightblue") +
-  labs(title = "Temperature Distribution by Fog", x = "Fog (0 = No, 1 = Yes)", y = "Temperature (°C)") +
-  facet_wrap(~STATION)
-```
-
-## Bar Plot for Count of Weather Events
-
-A bar plot showing the count of different weather events.
-
-```{r}
-# Summarize the relevant weather event columns
-weather_events_summary <- weather_data %>%
-  select(Fog, Rain_Drizzle, Snow_Ice_Pellets, Hail, Thunder, Tornado_Funnel_Cloud) %>%
-  summarize_all(sum, na.rm = TRUE)
-
-# Transform the data to a long format
-weather_events <- weather_events_summary %>%
-  pivot_longer(cols = everything(), names_to = "Event", values_to = "Count")
-
-# Plot the data
-ggplot(weather_events, aes(x = Event, y = Count)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Count of Weather Events", x = "Weather Event", y = "Count") +
-  theme_minimal()
-```
-
-## Correlation Matrix Heatmap
-
-A heatmap visualizing the correlation matrix of different weather attributes.
-
-```{r}
-weather_events_summary <- weather_data %>%
-  select(Fog, Rain, Snow, Hail, Thunder, Tornado_Funnel_Cloud) %>%
-  summarize_all(sum, na.rm = TRUE)
-
-weather_events <- weather_events_summary %>%
-  pivot_longer(cols = everything(), names_to = "Event", values_to = "Count")
-
-ggplot(weather_events, aes(x = Event, y = Count)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Count of Weather Events", x = "Weather Event", y = "Count") +
-  theme_minimal()
-```
-
-# Conclusion
-
-This document provided an overview of the weather data analysis, from data preparation to identifying extreme values and creating various visualizations. The analysis helps in understanding weather patterns, distributions, and correlations between different weather attributes, which can be useful for further studies and decision-making processes.
+Overall, this documentation encapsulates the journey of transforming raw weather data into actionable insights and interactive tools, showcasing the power of R programming and data visualization techniques in understanding and leveraging complex datasets for meaningful analysis.
